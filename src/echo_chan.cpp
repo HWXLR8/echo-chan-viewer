@@ -1,46 +1,81 @@
 #include <echo_chan.hpp>
 
 #include <cstdlib>
-#include <iostream>
 #include <stdexcept>
+#include <iostream>
+#include <string>
+#include <bitset>
 
 #include <fcntl.h>
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 
-EchoChan::EchoChan(std::string port) {
-  device_ = open(port.c_str(), O_RDONLY | O_NOCTTY);
+EchoChan::EchoChan() {
+  std::string port;
 
-  if (device_ == -1) {
-    throw std::runtime_error("Failed to connect to " + port);
+  // scan Windows COM ports for device
+  for (int i = 0; i < 256; ++i) {
+    port = "COM" + std::to_string(i);
+    char byte[1] = { 0 };
+    std::cout << "ATTEMPTING TO CONNECT TO " << port << std::endl;
+
+    // attempt to open the device
+    serial_ = CreateFile(port.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (serial_ != INVALID_HANDLE_VALUE) {
+      // set speedy timeouts to scan quickly
+      COMMTIMEOUTS timeout = { 0 };
+      timeout.ReadIntervalTimeout = 10;
+      timeout.ReadTotalTimeoutConstant = 10;
+      timeout.ReadTotalTimeoutMultiplier = 1;
+      timeout.WriteTotalTimeoutConstant = 10;
+      timeout.WriteTotalTimeoutMultiplier = 1;
+      SetCommTimeouts(serial_, &timeout);
+
+      // send Data Terminal Ready (DTR) signal and attempt a handshake
+      EscapeCommFunction(serial_, SETDTR);
+      byte[0] = '6';
+      WriteFile(serial_, &byte, 1, 0, NULL);
+      ReadFile(serial_, &byte, 1, 0, NULL);
+      EscapeCommFunction(serial_, CLRDTR);
+      if (byte[0] == '9') {
+        break;
+      }
+
+      // bad handshake
+      CloseHandle(serial_);
+    }
+
+    if (i == 255) {
+      throw std::runtime_error("Unable to find Echo Chan device");
+    }
   }
+
+  // set generous (0 = unlimited) timeouts now that we know it's Echo Chan
+  COMMTIMEOUTS timeout = { 0 };
+  timeout.ReadIntervalTimeout = 0;
+  timeout.ReadTotalTimeoutConstant = 0;
+  timeout.ReadTotalTimeoutMultiplier = 0;
+  timeout.WriteTotalTimeoutConstant = 50;
+  timeout.WriteTotalTimeoutMultiplier = 1;
+  SetCommTimeouts(serial_, &timeout);
+
+  // set a large buffer too, just in case
+  if (SetupComm(serial_, 32000, 32000) == 0) {
+    throw std::runtime_error("Failed to configure buffer sizes");
+  };
 }
 
 EchoChan::~EchoChan() {
   running_ = false;
-  close(device_);
+  CloseHandle(serial_);
 }
 
 void EchoChan::run() {
-  // previous states
-  uint8_t prev_state_1 = -1;
-  uint8_t prev_state_2 = -1;
-  // rotation in gearing
-  srand(time(0));
-  int rgear1 = rand() % 1458;
-  int rgear2 = rand() % 1458;
-
   running_ = true;
-
   while (running_) {
     extractStateFromPins();
-    calculateRotation(spinner_state1_, prev_state_1, rgear1);
-    calculateRotation(spinner_state2_, prev_state_2, rgear2);
-    r1_ = rgear1 * 360.0 / 1458.0;
-    r2_ = rgear2 * 360.0 / 1458.0;
   }
-  std::cout << "THREAD DONE" << std::endl;
 }
 
 double EchoChan::getSpinnerRotation(int snum) {
@@ -50,66 +85,64 @@ double EchoChan::getSpinnerRotation(int snum) {
   return r2_;
 }
 
-void EchoChan::calculateRotation(uint8_t& state, uint8_t& prev_state, int& rgear) {
-  if (state != prev_state) {
-    if ((prev_state == 2 && state == 1) || // CW
-	(prev_state == 1 && state == 0) ||
-	(prev_state == 0 && state == 2)) {
-      rgear = (rgear + 1) % 1458;
-    } else if ((prev_state == 2 && state == 0) || // CCW
-	       (prev_state == 0 && state == 1) ||
-	       (prev_state == 1 && state == 2)) {
-      rgear--;
-      if (rgear == -1) {
-	rgear = 1457;
-      }
-    }
-    prev_state = state;
-  }
-}
-
 void EchoChan::extractStateFromPins() {
-  char buf[32];
-  int n = read(device_, buf, sizeof(buf));
+  char buf[11] = {0};
+  char byte[1] = {0};
+  int i = 0;
 
-  // button state
-  buttons_[UP1] = buf[0] - '0';
-  buttons_[DOWN1] = buf[1] - '0';
-  buttons_[LEFT1] = buf[2] - '0';
-  buttons_[RIGHT1] = buf[3] - '0';
-  buttons_[A1] = buf[4] - '0';
-  buttons_[B1] = buf[5] - '0';
-  buttons_[C1] = buf[6] - '0';
-  buttons_[D1] = buf[7] - '0';
-  buttons_[S1] = buf[16] - '0';
-
-  buttons_[UP2] = buf[8] - '0';
-  buttons_[DOWN2] = buf[9] - '0';
-  buttons_[LEFT2] = buf[10] - '0';
-  buttons_[RIGHT2] = buf[11] - '0';
-  buttons_[A2] = buf[12] - '0';
-  buttons_[B2] = buf[13] - '0';
-  buttons_[C2] = buf[14] - '0';
-  buttons_[D2] = buf[15] - '0';
-  buttons_[S2] = buf[17] - '0';
-
-  // spinner state
-  spinner_state1_ = 0x0000;
-  spinner_state2_ = 0x0000;
-  // spinner 1
-  spinner_state1_ |= buf[2] - '0';
-  spinner_state1_ <<= 1;
-  spinner_state1_ |= buf[3] - '0';
-  if (spinner_state1_ == 3) {
-    spinner_state1_ = 1;
+  while (i < 11 || byte[0] != '\n') { // >= 11 bytes, terminating with \n
+    if (!ReadFile(serial_, &byte, 1, 0, NULL)) {
+      std::cout << "Device stopped responding" << std::endl;;
+    } else if (i < 11) { // don't write past the buffer
+      buf[i] = byte[0];
+    }
+    ++i;
   }
-  // spinner 2
-  spinner_state2_ |= buf[10] - '0';
-  spinner_state2_ <<= 1;
-  spinner_state2_ |= buf[11] - '0';
-  if (spinner_state2_ == 3) {
-    spinner_state2_ = 1;
+
+  if (i != 11) {
+    std::cout << "Invalid byte line length: " << i << " detected" << std::endl;
+    return;
   }
+
+  // // debug display of all bytes
+  // std::cout << "===\n";
+  // std::bitset<8> b(buf[0]);
+  // std::cout << "buttons: " << b << '\n';
+  // std::bitset<8> j(buf[1]);
+  // std::cout << "joysticks: " << j << '\n';
+  // std::bitset<8> m(buf[2]);
+  // std::cout << "misc: " << m << '\n';
+  // std::bitset<8> k(buf[3]);
+  // std::cout << "kick: " << k << '\n';
+  // std::cout << "spinner 1 state: " << (((unsigned char)buf[4] << 2*CHAR_BIT) | ((unsigned char)buf[5] << CHAR_BIT) | ((unsigned char)buf[6])) << " / 1458\n";
+  // std::cout << "spinner 2 state: " << (((unsigned char)buf[7] << 2*CHAR_BIT) | ((unsigned char)buf[8] << CHAR_BIT) | ((unsigned char)buf[9])) << " / 1458\n";
+
+  // button states
+  buttons_[UP1] = buf[1] & 0x01;
+  buttons_[DOWN1] = buf[1] & 0x02;
+  buttons_[LEFT1] = buf[1] & 0x04;
+  buttons_[RIGHT1] = buf[1] & 0x08;
+  buttons_[A1] = buf[0] & 0x01;
+  buttons_[B1] = buf[0] & 0x02;
+  buttons_[C1] = buf[0] & 0x04;
+  buttons_[D1] = buf[0] & 0x08;
+  buttons_[S1] = buf[2] & 0x01;
+
+  buttons_[UP2] = buf[1] & 0x10;
+  buttons_[DOWN2] = buf[1] & 0x20;
+  buttons_[LEFT2] = buf[1] & 0x40;
+  buttons_[RIGHT2] = buf[1] & 0x80;
+  buttons_[A2] = buf[0] & 0x10;
+  buttons_[B2] = buf[0] & 0x20;
+  buttons_[C2] = buf[0] & 0x40;
+  buttons_[D2] = buf[0] & 0x80;
+  buttons_[S2] = buf[2] & 0x02;
+
+  // spinner states
+  int rgear1 = (((unsigned char)buf[4] << 2*CHAR_BIT) | ((unsigned char)buf[5] << CHAR_BIT) | ((unsigned char)buf[6]));
+  int rgear2 = (((unsigned char)buf[7] << 2*CHAR_BIT) | ((unsigned char)buf[8] << CHAR_BIT) | ((unsigned char)buf[9]));
+  r1_ = rgear1 * 360.0 / 1458.0;
+  r2_ = rgear2 * 360.0 / 1458.0;
 }
 
 bool EchoChan::isButtonPressed(BUTTON_LABEL b) {

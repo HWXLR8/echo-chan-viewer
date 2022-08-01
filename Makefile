@@ -9,7 +9,10 @@ ifeq ($(UNAME_S),Darwin)
 	LDFLAGS = `pkg-config --static --libs glfw3` -framework OpenGL -lm -lpthread -ldl
 endif
 
-CXXFLAGS = -std=c++17 -Wall -Wextra
+LDFLAGS = -lopengl32 -lkernel32 -luser32 -Llib -lglfw3 -lgdi32
+CC = x86_64-w64-mingw32-gcc.exe
+CXX = x86_64-w64-mingw32-g++.exe
+CXXFLAGS = -std=c++17 -static-libgcc -static-libstdc++
 CFLAGS = -O2 -Iinclude
 CPPFLAGS = -Iinclude
 SRC_DIR := src
@@ -18,16 +21,16 @@ SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
 $(NAME): $(OBJ_FILES) bin/glad.o bin/stb_image.o
-	g++ $(LDFLAGS) -o $@ $^
+	$(CXX) -static $(LDFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-	g++ $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) -static $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 bin/glad.o: src/glad.c
-	gcc $(CFLAGS) -c src/glad.c -o bin/glad.o
+	$(CC) -static $(CFLAGS) -c src/glad.c -o bin/glad.o
 
 bin/stb_image.o: src/stb_image.c
-	gcc $(CFLAGS) -c src/stb_image.c -o bin/stb_image.o
+	$(CC) -static $(CFLAGS) -c src/stb_image.c -o bin/stb_image.o
 
 .PHONY: run
 run: $(NAME)

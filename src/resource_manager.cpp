@@ -1,18 +1,18 @@
 #include <glad/glad.h>
 #include <stb/stb_image.h>
 
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 
 #include <resource_manager.hpp>
 
-
+// Instantiate static variables
 std::map<std::string, Texture2D> ResourceManager::Textures;
 std::map<std::string, Shader> ResourceManager::Shaders;
 
-Shader ResourceManager::loadShader(const char* vShaderFile, const char* fShaderFile, const char* gShaderFile, std::string name) {
+Shader ResourceManager::loadShader(const char *vShaderFile, const char *fShaderFile, const char *gShaderFile, std::string name) {
   Shaders[name] = loadShaderFromFile(vShaderFile, fShaderFile, gShaderFile);
   return Shaders[name];
 }
@@ -50,7 +50,7 @@ void ResourceManager::clear() {
   }
 }
 
-Shader ResourceManager::loadShaderFromFile(const char* vShaderFile, const char* fShaderFile, const char* gShaderFile) {
+Shader ResourceManager::loadShaderFromFile(const char *vShaderFile, const char *fShaderFile, const char *gShaderFile) {
   std::string vertexCode;
   std::string fragmentCode;
   std::string geometryCode;
@@ -75,9 +75,9 @@ Shader ResourceManager::loadShaderFromFile(const char* vShaderFile, const char* 
   catch (std::exception& e) {
     std::cout << "ERROR::SHADER: Failed to read shader files" << std::endl;
   }
-  const char* vShaderCode = vertexCode.c_str();
-  const char* fShaderCode = fragmentCode.c_str();
-  const char* gShaderCode = geometryCode.c_str();
+  const char *vShaderCode = vertexCode.c_str();
+  const char *fShaderCode = fragmentCode.c_str();
+  const char *gShaderCode = geometryCode.c_str();
   Shader shader;
   shader.compile(vShaderCode, fShaderCode, gShaderFile != nullptr ? gShaderCode : nullptr);
   return shader;

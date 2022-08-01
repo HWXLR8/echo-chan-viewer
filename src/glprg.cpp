@@ -41,7 +41,7 @@ GLPRG::GLPRG() {
   renderer = new Renderer(shader);
 
   // input
-  echo_chan_ = new EchoChan("/dev/ttyACM0");
+  echo_chan_ = new EchoChan();
   input_view_ = new InputView(echo_chan_);
   input_ = new Input(window_, input_view_);
   tchan_ = std::thread(&EchoChan::run, echo_chan_);
