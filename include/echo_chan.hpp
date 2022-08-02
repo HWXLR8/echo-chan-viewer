@@ -19,6 +19,8 @@ public:
   void calculateRotation(uint8_t& state, uint8_t& prev_state, int& rgear);
   void extractStateFromPins();
   bool isButtonPressed(BUTTON_LABEL b);
+  bool getStateFresh();
+  void setStateFresh(bool fresh);
 
 private:
   HANDLE serial_;
@@ -31,4 +33,5 @@ private:
   double r1_;
   double r2_;
   bool running_ = false;
+  bool fresh_ = true;
 };

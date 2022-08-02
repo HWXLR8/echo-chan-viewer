@@ -123,6 +123,7 @@ void Joystick::render(Renderer* renderer) {
 }
 
 void Joystick::nextStickType(int direction) {
+  echo_chan_->setStateFresh(true);
   current_stick_type_ += direction;
   if (current_stick_type_ > 5) {
     current_stick_type_ = 0;

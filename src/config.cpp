@@ -1,6 +1,7 @@
 #include <config.hpp>
 
 const char* Config::WINDOW_TITLE = "ECHO CHAN INPUT VIEWER";
+const float Config::FRAME_LENGTH = 1.0f/60.0f;
 glm::vec2 Config::SCALE = {1.0, 1.0};
 glm::vec2 Config::SCREEN_SIZE = {910, 220};
 

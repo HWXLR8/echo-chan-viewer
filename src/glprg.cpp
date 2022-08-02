@@ -115,13 +115,17 @@ void GLPRG::run() {
   while (!glfwWindowShouldClose(window_)) {
     double currentFrame = glfwGetTime();
     dt = currentFrame - lastFrame;
-    lastFrame = currentFrame;
     glfwPollEvents();
-
     update(dt);
 
-    glClear(GL_COLOR_BUFFER_BIT);
-    render();
-    glfwSwapBuffers(window_);
+    // only render if something changed (new echo chan state or viewer configuration)
+    // and at least 1 frame time has elapsed since previous render
+    if ((echo_chan_->getStateFresh() == true && dt >= Config::FRAME_LENGTH)) {
+      lastFrame = currentFrame;
+      echo_chan_->setStateFresh(false);
+      glClear(GL_COLOR_BUFFER_BIT);
+      render();
+      glfwSwapBuffers(window_);
+    }
   }
 }
