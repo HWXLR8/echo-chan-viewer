@@ -8,6 +8,7 @@
 class Config {
 public:
   static const char* WINDOW_TITLE;
+  static const float FRAME_LENGTH;
   static glm::vec2 SCALE;
   static glm::vec2 SCREEN_SIZE;
 
