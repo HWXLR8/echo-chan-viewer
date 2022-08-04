@@ -14,6 +14,7 @@ class EchoChan {
 public:
   EchoChan();
   ~EchoChan();
+  void scanForChan();
   void run();
   double getSpinnerRotation(int snum);
   void calculateRotation(uint8_t& state, uint8_t& prev_state, int& rgear);
