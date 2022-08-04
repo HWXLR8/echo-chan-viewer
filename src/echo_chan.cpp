@@ -1,10 +1,12 @@
 #include <echo_chan.hpp>
 
 #include <bitset>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include <fcntl.h>
 #include <stdint.h>
@@ -12,42 +14,7 @@
 #include <unistd.h>
 
 EchoChan::EchoChan() {
-  // scan Windows COM ports for device
-  for (int i = 0; i < 256; ++i) {
-    std::string port = "COM" + std::to_string(i);
-    char byte[1] = { 0 };
-    std::cout << "ATTEMPTING TO CONNECT TO " << port << std::endl;
-
-    // attempt to open the device
-    serial_ = CreateFile(port.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (serial_ != INVALID_HANDLE_VALUE) {
-      // set speedy timeouts to scan quickly
-      COMMTIMEOUTS timeout = { 0 };
-      timeout.ReadIntervalTimeout = 10;
-      timeout.ReadTotalTimeoutConstant = 10;
-      timeout.ReadTotalTimeoutMultiplier = 1;
-      timeout.WriteTotalTimeoutConstant = 10;
-      timeout.WriteTotalTimeoutMultiplier = 1;
-      SetCommTimeouts(serial_, &timeout);
-
-      // send Data Terminal Ready (DTR) signal and attempt a handshake
-      EscapeCommFunction(serial_, SETDTR);
-      byte[0] = '6';
-      WriteFile(serial_, &byte, 1, 0, NULL);
-      ReadFile(serial_, &byte, 1, 0, NULL);
-      EscapeCommFunction(serial_, CLRDTR);
-      if (byte[0] == '9') {
-        break;
-      }
-
-      // bad handshake
-      CloseHandle(serial_);
-    }
-
-    if (i == 255) {
-      throw std::runtime_error("Unable to find Echo Chan device");
-    }
-  }
+  scanForChan();
 
   // set generous (0 = unlimited) timeouts now that we know it's Echo Chan
   COMMTIMEOUTS timeout = { 0 };
@@ -66,6 +33,7 @@ EchoChan::EchoChan() {
 
 EchoChan::~EchoChan() {
   running_ = false;
+  EscapeCommFunction(serial_, CLRDTR);
   CloseHandle(serial_);
 }
 
@@ -73,6 +41,52 @@ void EchoChan::run() {
   running_ = true;
   while (running_) {
     extractStateFromPins();
+  }
+}
+
+void EchoChan::scanForChan() {
+  // in case the DTR pin was left high by another program
+  EscapeCommFunction(serial_, CLRDTR);
+
+  while (1) {
+    // scan Windows COM ports for device
+    for (int i = 0; i < 256; ++i) {
+      std::string port = "COM" + std::to_string(i);
+      char byte[1] = { 0 };
+
+      // attempt to open the device
+      serial_ = CreateFile(port.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+      if (serial_ != INVALID_HANDLE_VALUE) {
+        std::cout << "Attempting handshake with " << port << std::endl;
+
+        // set speedy timeouts to scan quickly
+        COMMTIMEOUTS timeout = { 0 };
+        timeout.ReadIntervalTimeout = 10;
+        timeout.ReadTotalTimeoutConstant = 10;
+        timeout.ReadTotalTimeoutMultiplier = 1;
+        timeout.WriteTotalTimeoutConstant = 10;
+        timeout.WriteTotalTimeoutMultiplier = 1;
+        SetCommTimeouts(serial_, &timeout);
+
+        // send Data Terminal Ready (DTR) signal and attempt a handshake
+        EscapeCommFunction(serial_, SETDTR);
+        byte[0] = '6';
+        WriteFile(serial_, &byte, 1, 0, NULL);
+        ReadFile(serial_, &byte, 1, 0, NULL);
+        if (byte[0] == '9') {
+          return;
+        }
+
+        // bad handshake
+        EscapeCommFunction(serial_, CLRDTR);
+        CloseHandle(serial_);
+      }
+
+      if (i == 255) {
+        std::cout << "Unable to find Echo Chan device" << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      }
+    }
   }
 }
 
@@ -91,6 +105,7 @@ void EchoChan::extractStateFromPins() {
   while (i < 11 || byte[0] != '\n') { // >= 11 bytes, terminating with \n
     if (!ReadFile(serial_, &byte, 1, 0, NULL)) {
       std::cout << "Device stopped responding" << std::endl;
+      scanForChan();
     } else if (i < 11) { // don't write past the buffer
       buf[i] = byte[0];
     }
