@@ -1,6 +1,5 @@
 #include <echo_chan.hpp>
 
-#include <bitset>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -15,15 +14,6 @@
 
 EchoChan::EchoChan() {
   scanForChan();
-
-  // set generous (0 = unlimited) timeouts now that we know it's Echo Chan
-  COMMTIMEOUTS timeout = { 0 };
-  timeout.ReadIntervalTimeout = 0;
-  timeout.ReadTotalTimeoutConstant = 0;
-  timeout.ReadTotalTimeoutMultiplier = 0;
-  timeout.WriteTotalTimeoutConstant = 50;
-  timeout.WriteTotalTimeoutMultiplier = 1;
-  SetCommTimeouts(serial_, &timeout);
 
   // set a large buffer too, just in case
   if (SetupComm(serial_, 32000, 32000) == 0) {
@@ -98,39 +88,43 @@ double EchoChan::getSpinnerRotation(int snum) {
 }
 
 void EchoChan::extractStateFromPins() {
-  char buf[11] = {0};
-  char byte[1] = {0};
+  char buf[11] = { 0 };
+  char byte[1] = { 0 };
+  uint32_t n_bytes_read = 0;
   int i = 0;
 
-  while (i < 11 || byte[0] != '\n') { // >= 11 bytes, terminating with \n
-    if (!ReadFile(serial_, &byte, 1, 0, NULL)) {
-      std::cout << "Device stopped responding" << std::endl;
-      scanForChan();
-    } else if (i < 11) { // don't write past the buffer
-      buf[i] = byte[0];
+  // fetch 11 *or more* bytes, terminating with \n
+  while (i < 11 || byte[0] != '\n') {
+
+    // attempt to read a single byte repeatedly
+    while (1) {
+      n_bytes_read = 0;
+      if (!ReadFile(serial_, &byte, 1, &n_bytes_read, NULL)) {
+        std::cout << "Device stopped responding" << std::endl;
+        EscapeCommFunction(serial_, CLRDTR); // our handshake is invalidated so clear the DTR bit
+        scanForChan();
+      } else if (n_bytes_read > 0) { // watch out, if the ReadFile timed out it returns 1 but with 0 bytes read
+        break;
+      }
+      continue;
     }
+
+    // add the byte to the buffer as long as it doesn't overflow
+    if (i < 11) {
+        buf[i] = byte[0];
+    }
+
     ++i;
   }
 
+  // if more than 11 bytes were read, reject the buffer
   if (i != 11) {
     std::cout << "Invalid byte line length: " << i << " detected" << std::endl;
     return;
   }
+  // otherwise process the buffer
 
-  // // debug display of all bytes
-  // std::cout << "===\n";
-  // std::bitset<8> b(buf[0]);
-  // std::cout << "buttons: " << b << '\n';
-  // std::bitset<8> j(buf[1]);
-  // std::cout << "joysticks: " << j << '\n';
-  // std::bitset<8> m(buf[2]);
-  // std::cout << "misc: " << m << '\n';
-  // std::bitset<8> k(buf[3]);
-  // std::cout << "kick: " << k << '\n';
-  // std::cout << "spinner 1 state: " << (((unsigned char)buf[4] << 2*CHAR_BIT) | ((unsigned char)buf[5] << CHAR_BIT) | ((unsigned char)buf[6])) << " / 1458\n";
-  // std::cout << "spinner 2 state: " << (((unsigned char)buf[7] << 2*CHAR_BIT) | ((unsigned char)buf[8] << CHAR_BIT) | ((unsigned char)buf[9])) << " / 1458\n";
-
-  // button states
+  // player 1 buttons
   buttons_[UP1] = buf[1] & 0x01;
   buttons_[DOWN1] = buf[1] & 0x02;
   buttons_[LEFT1] = buf[1] & 0x04;
@@ -141,6 +135,7 @@ void EchoChan::extractStateFromPins() {
   buttons_[D1] = buf[0] & 0x08;
   buttons_[S1] = buf[2] & 0x01;
 
+  // player 2 buttons
   buttons_[UP2] = buf[1] & 0x10;
   buttons_[DOWN2] = buf[1] & 0x20;
   buttons_[LEFT2] = buf[1] & 0x40;
