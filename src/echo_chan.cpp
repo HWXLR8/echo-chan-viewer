@@ -1,10 +1,10 @@
 #include <echo_chan.hpp>
 
-#include <cstdlib>
-#include <stdexcept>
-#include <iostream>
-#include <string>
 #include <bitset>
+#include <cstdlib>
+#include <iostream>
+#include <stdexcept>
+#include <string>
 
 #include <fcntl.h>
 #include <stdint.h>
@@ -12,11 +12,9 @@
 #include <unistd.h>
 
 EchoChan::EchoChan() {
-  std::string port;
-
   // scan Windows COM ports for device
   for (int i = 0; i < 256; ++i) {
-    port = "COM" + std::to_string(i);
+    std::string port = "COM" + std::to_string(i);
     char byte[1] = { 0 };
     std::cout << "ATTEMPTING TO CONNECT TO " << port << std::endl;
 
@@ -63,7 +61,7 @@ EchoChan::EchoChan() {
   // set a large buffer too, just in case
   if (SetupComm(serial_, 32000, 32000) == 0) {
     throw std::runtime_error("Failed to configure buffer sizes");
-  };
+  }
 }
 
 EchoChan::~EchoChan() {
@@ -92,7 +90,7 @@ void EchoChan::extractStateFromPins() {
 
   while (i < 11 || byte[0] != '\n') { // >= 11 bytes, terminating with \n
     if (!ReadFile(serial_, &byte, 1, 0, NULL)) {
-      std::cout << "Device stopped responding" << std::endl;;
+      std::cout << "Device stopped responding" << std::endl;
     } else if (i < 11) { // don't write past the buffer
       buf[i] = byte[0];
     }
