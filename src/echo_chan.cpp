@@ -80,13 +80,6 @@ void EchoChan::scanForChan() {
   }
 }
 
-double EchoChan::getSpinnerRotation(int snum) {
-  if (snum == 1) {
-    return r1_;
-  }
-  return r2_;
-}
-
 void EchoChan::extractStateFromPins() {
   char buf[11] = { 0 };
   char byte[1] = { 0 };
