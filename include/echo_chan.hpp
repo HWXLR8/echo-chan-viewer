@@ -16,8 +16,6 @@ public:
   ~EchoChan();
   void scanForChan();
   void run();
-  double getSpinnerRotation(int snum);
-  void calculateRotation(uint8_t& state, uint8_t& prev_state, int& rgear);
   void extractStateFromPins();
   bool isButtonPressed(BUTTON_LABEL b);
 
@@ -25,10 +23,7 @@ private:
   HANDLE serial_;
   // device state
   std::map<BUTTON_LABEL, bool> buttons_;
-  // spinner state
-  uint8_t spinner_state1_ = 0x0000;
-  uint8_t spinner_state2_ = 0x0000;
-  // rotation in degrees
+  // spinner rotation in degrees
   double r1_;
   double r2_;
   bool running_ = false;
